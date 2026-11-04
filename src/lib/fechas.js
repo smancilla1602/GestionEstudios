@@ -23,6 +23,29 @@ export function sumarMeses(fechaISO, meses) {
   return `${anioDestino}-${pad2(mesDestino + 1)}-${pad2(diaDestino)}`;
 }
 
+export function sumarDias(fechaISO, dias) {
+  if (!fechaISO || !/^\d{4}-\d{2}-\d{2}$/.test(fechaISO)) return '';
+  const fecha = new Date(`${fechaISO}T00:00:00Z`);
+  fecha.setUTCDate(fecha.getUTCDate() + (Number(dias) || 0));
+  return fecha.toISOString().slice(0, 10);
+}
+
+/** Vencimiento de un estudio provisional: primero meses (fin de mes) y luego días. */
+export function calcularVencimiento(fechaISO, { meses = 0, dias = 0 } = {}) {
+  if (!fechaISO || !/^\d{4}-\d{2}-\d{2}$/.test(fechaISO)) return '';
+  return sumarDias(sumarMeses(fechaISO, Number(meses) || 0), Number(dias) || 0);
+}
+
+/** "1 mes y 10 días", "10 días", "12 meses", "sin vigencia". */
+export function describirVigencia(meses = 0, dias = 0) {
+  const totalMeses = Number(meses) || 0;
+  const totalDias = Number(dias) || 0;
+  const partes = [];
+  if (totalMeses > 0) partes.push(`${totalMeses} ${totalMeses === 1 ? 'mes' : 'meses'}`);
+  if (totalDias > 0) partes.push(`${totalDias} ${totalDias === 1 ? 'día' : 'días'}`);
+  return partes.length > 0 ? partes.join(' y ') : 'sin vigencia';
+}
+
 export function diasDesdeHoy(fechaISO, referencia = hoyISO()) {
   if (!fechaISO || !/^\d{4}-\d{2}-\d{2}$/.test(fechaISO)) return null;
   const a = Date.parse(`${fechaISO}T00:00:00Z`);

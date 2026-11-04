@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import SemaforoBadge from './SemaforoBadge';
 import { api } from '../lib/api';
-import { formatearDias, formatearFecha } from '../lib/fechas';
+import { describirVigencia, formatearDias, formatearFecha } from '../lib/fechas';
 import {
   ETIQUETAS_RESULTADO,
   ESTILOS_RESULTADO,
@@ -31,6 +31,8 @@ export default function EmpleadoDetalle({
 }) {
   const [errorArchivo, setErrorArchivo] = useState(null);
   const estilo = estiloSemaforo(empleado.estado_semaforo);
+  // Los estudios vigentes son el último registro de cada tipo; el resto del historial es anterior.
+  const idsVigentes = new Set(empleado.estudios.map((estudio) => estudio.id));
 
   async function abrirArchivo(estudio) {
     setErrorArchivo(null);
@@ -152,7 +154,28 @@ export default function EmpleadoDetalle({
                 {empleado.estudios.map((estudio) => (
                   <tr key={estudio.id} className="hover:bg-slate-800/20">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-200">{estudio.tipo_estudio}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-slate-200">{estudio.tipo_estudio}</p>
+                        {estudio.es_provisional ? (
+                          <span className="badge border-amber-500/25 bg-amber-500/10 text-amber-300">
+                            Provisional
+                          </span>
+                        ) : null}
+                      </div>
+                      {estudio.es_provisional ? (
+                        <p className="mt-0.5 text-[11px] font-medium text-amber-300/90">
+                          Vigencia:{' '}
+                          {describirVigencia(
+                            estudio.vigencia_meses_aplicada,
+                            estudio.vigencia_dias_aplicada
+                          )}
+                        </p>
+                      ) : null}
+                      {estudio.provisional_motivo ? (
+                        <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-400">
+                          {estudio.provisional_motivo}
+                        </p>
+                      ) : null}
                       {estudio.observaciones ? (
                         <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
                           {estudio.observaciones}
@@ -220,7 +243,7 @@ export default function EmpleadoDetalle({
         <details className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-3">
           <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-300">
             <CalendarClock size={14} />
-            Historial completo ({empleado.historia.length} registros)
+            Historial de registros ({empleado.historia.length}) · manda el último capturado
           </summary>
           <ul className="mt-3 space-y-1.5 border-t border-slate-800 pt-3">
             {empleado.historia.map((estudio) => (
@@ -229,6 +252,11 @@ export default function EmpleadoDetalle({
                 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400"
               >
                 <span className="font-medium text-slate-300">{estudio.tipo_estudio}</span>
+                {estudio.es_provisional ? (
+                  <span className="badge border-amber-500/25 bg-amber-500/10 text-amber-300">
+                    Provisional
+                  </span>
+                ) : null}
                 <span>·</span>
                 <span>{formatearFecha(estudio.fecha_realizacion)}</span>
                 <span>→</span>
@@ -238,6 +266,15 @@ export default function EmpleadoDetalle({
                 >
                   {ETIQUETAS_RESULTADO[estudio.resultado] || estudio.resultado}
                 </span>
+                {idsVigentes.has(estudio.id) ? (
+                  <span className="badge border-emerald-500/25 bg-emerald-500/10 text-emerald-300">
+                    Vigente
+                  </span>
+                ) : (
+                  <span className="badge border-slate-700 bg-slate-800/80 text-slate-400">
+                    Histórico
+                  </span>
+                )}
               </li>
             ))}
           </ul>

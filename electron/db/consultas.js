@@ -1,6 +1,10 @@
 /**
  * Consultas de lectura que combinan empleados + estudios + semáforo.
  * Es la capa que consume el Dashboard, los expedientes y la exportación a Excel.
+ *
+ * Orden de la historia: el REGISTRO MÁS RECIENTE primero (`creado_en` / `id`), porque el
+ * estudio que manda para el semáforo es el último que capturó Recursos Humanos, no el que
+ * tiene la fecha de realización más grande (un estudio se puede registrar días después).
  */
 
 const { getDb } = require('./database');
@@ -13,6 +17,8 @@ const CAMPOS_EMPLEADO = `
 const SQL_HISTORIA = `
   SELECT em.id, em.empleado_id, em.tipo_estudio_id, em.fecha_realizacion, em.fecha_vencimiento,
          em.resultado, em.ruta_archivo, em.observaciones, em.creado_en,
+         em.es_provisional, em.vigencia_meses_aplicada, em.vigencia_dias_aplicada,
+         em.provisional_motivo,
          te.nombre AS tipo_estudio, te.vigencia_meses
   FROM estudios_medicos em
   JOIN tipos_estudio te ON te.id = em.tipo_estudio_id
@@ -42,7 +48,7 @@ function obtenerEmpleadosConEstado() {
     .all();
 
   const historia = db
-    .prepare(`${SQL_HISTORIA} ORDER BY em.empleado_id ASC, em.fecha_realizacion DESC, em.id DESC`)
+    .prepare(`${SQL_HISTORIA} ORDER BY em.empleado_id ASC, em.creado_en DESC, em.id DESC`)
     .all();
 
   const historiaPorEmpleado = new Map();
@@ -66,7 +72,7 @@ function obtenerEmpleadoPorId(id) {
   if (!empleado) return null;
 
   const historia = db
-    .prepare(`${SQL_HISTORIA} WHERE em.empleado_id = ? ORDER BY em.fecha_realizacion DESC, em.id DESC`)
+    .prepare(`${SQL_HISTORIA} WHERE em.empleado_id = ? ORDER BY em.creado_en DESC, em.id DESC`)
     .all(empleado.id);
 
   return construirEmpleado(empleado, historia);

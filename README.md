@@ -44,7 +44,9 @@ directamente al **Dashboard**: no se pide número de empleado ni contraseña.
 
 Decisiones relevantes:
 
-- Se evalúa **el estudio más reciente de cada tipo** (una renovación no queda presa de un estudio viejo).
+- Se evalúa **el último registro de cada tipo** (`creado_en`, luego `id`): al volver a registrar un
+  estudio del mismo tipo, el nuevo manda para el semáforo y el anterior pasa a ser histórico,
+  aunque la fecha de realización del nuevo sea anterior (un estudio se puede capturar días después).
 - `RESTRICCION` no bloquea el acceso, pero se muestra como advertencia.
 - **Sin estudios = bloqueado** (criterio conservador de seguridad).
 - El vencimiento se calcula en el backend con la vigencia del tipo de estudio, nunca en el navegador.
@@ -52,6 +54,11 @@ Decisiones relevantes:
   lo pide, se calcula y asigna solo al guardar. En la edición únicamente se muestra como referencia.
 - El panel **Tipos de estudio** permite cambiar nombre y vigencia; al cambiar la vigencia se puede
   optar por recalcular (o conservar) las fechas de vencimiento de los estudios ya registrados.
+- **Estudio provisional**: al registrar un estudio se puede marcar como provisional y capturar la
+  vigencia en **meses + días** (por ejemplo `1 mes y 10 días`, o sólo `10 días`). El vencimiento se
+  calcula primero en meses y luego en días, se guarda la vigencia aplicada y el recálculo de
+  "Tipos de estudio" **no** altera estos registros. El Excel los muestra con la columna
+  **Vigencia aplicada** (`Provisional · 1 mes y 10 días`).
 
 ## Requisitos
 
@@ -143,8 +150,8 @@ npm run verify      # backend: reglas, DDL, CRUD, cascada, consultas, Excel, bcr
 npm run smoke:ui    # Electron + build real: dashboard, detalle, filtros y capturas
 ```
 
-Estado actual: **30/30 pruebas backend OK** y **smoke test de UI OK** (incluye el número
-automático y el panel de tipos de estudio).
+Estado actual: **42/42 pruebas backend OK** y **smoke test de UI OK** (incluye el número
+automático, el panel de tipos de estudio y el estudio provisional con vigencia en meses + días).
 
 ## Empaquetado y prueba del .exe
 
@@ -159,6 +166,9 @@ Genera:
 | --- | --- |
 | `release\EstudiosMedicos Setup 1.0.0.exe` | Instalador NSIS x64 (elegir carpeta, accesos directos) |
 | `release\win-unpacked\EstudiosMedicos.exe` | Versión portable para probar sin instalar |
+
+> Guía de comandos paso a paso (requisitos, empaquetado, problemas comunes y checklist):
+> **`GUIA-COMPILACION.md`**.
 
 **Cómo probarlo**
 

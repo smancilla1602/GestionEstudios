@@ -210,7 +210,7 @@ export default function TiposEstudio() {
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 px-4 py-3 text-[11px] text-slate-500">
           <span>
             Cambiar el nombre no altera los estudios registrados. Al cambiar la vigencia puede
-            recalcular sus vencimientos.
+            recalcular sus vencimientos; los estudios provisionales conservan siempre su vigencia.
           </span>
           <span>Los tipos con estudios registrados no se pueden eliminar</span>
         </footer>

@@ -17,8 +17,8 @@ export default function Toast({ toast, onCerrar }) {
       <div
         className={`flex items-start gap-3 rounded-2xl border p-4 shadow-2xl shadow-black/50 backdrop-blur ${
           esError
-            ? 'border-rose-500/40 bg-rose-950/90'
-            : 'border-emerald-500/40 bg-emerald-950/90'
+            ? 'border-rose-500/40 bg-slate-900/95 dark:bg-rose-950/90'
+            : 'border-emerald-500/40 bg-slate-900/95 dark:bg-emerald-950/90'
         }`}
         role="status"
       >

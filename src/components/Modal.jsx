@@ -32,7 +32,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-500/40 p-4 backdrop-blur-sm dark:bg-slate-950/80 sm:items-center"
       onMouseDown={(evento) => {
         if (evento.target === evento.currentTarget) onCerrar?.();
       }}

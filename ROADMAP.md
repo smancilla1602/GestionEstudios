@@ -17,7 +17,7 @@ médicos de los empleados y dé seguimiento a su estado: **Vigente / Próximo a 
 | Stack | Electron 38 · React 19 · Vite 7 · Tailwind 3 · better-sqlite3 12 · SheetJS |
 | Base de datos | `%APPDATA%\EstudiosMedicos\data\estudios.db` (WAL, FK activas) |
 | Usuario inicial | `admin` / `Admin123!` (hash bcrypt, cambio pendiente en Fase 6) |
-| Pruebas backend | 30/30 ✅ (`npm run verify`) |
+| Pruebas backend | 42/42 ✅ (`npm run verify`) |
 | Prueba de interfaz | ✅ smoke test con capturas (`npm run smoke:ui`) |
 
 ---
@@ -156,8 +156,10 @@ médicos de los empleados y dé seguimiento a su estado: **Vigente / Próximo a 
 
 ## Decisiones de diseño
 
-1. **Último estudio por tipo**: el semáforo evalúa únicamente el estudio más reciente de cada tipo
-   (por `fecha_realizacion`, luego `id`). Así una renovación no queda bloqueada por un estudio viejo.
+1. **Último registro por tipo**: el semáforo evalúa únicamente el estudio capturado más
+   recientemente de cada tipo (`creado_en DESC, id DESC`), no el de mayor `fecha_realizacion`. Así,
+   cuando RH vuelve a registrar un estudio del mismo tipo, ese registro manda y el anterior queda
+   como histórico; una renovación nunca queda presa de un estudio viejo.
 2. **Sin estudios = BLOQUEADO**: criterio conservador; el expediente del empleado muestra el motivo
    "Sin estudios médicos registrados".
 3. **NO_APTO bloquea** aunque la fecha esté vigente. **RESTRICCION no bloquea**, pero se muestra
@@ -177,6 +179,12 @@ médicos de los empleados y dé seguimiento a su estado: **Vigente / Próximo a 
     son dependencias de runtime del proceso main.
 12. **Módulo Kiosco descartado**: no hay captura de número de empleado ni validación de acceso en
     planta; el objetivo es el control y seguimiento de estudios médicos desde RH.
+13. **Estudio provisional**: se reutiliza el tipo de estudio del catálogo y la vigencia se captura en
+    **meses + días** (`1 mes y 10 días`, `10 días`, …). El vencimiento se calcula primero en meses
+    (respetando fin de mes) y luego en días; se guarda la vigencia aplicada
+    (`es_provisional`, `vigencia_meses_aplicada`, `vigencia_dias_aplicada`) y el recálculo de
+    "Tipos de estudio" **ignora** estos registros. El esquema pasó a `user_version = 2` con migración
+    automática e idempotente al arrancar.
 
 ## Comandos
 

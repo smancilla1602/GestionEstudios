@@ -13,7 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const XLSX = require('xlsx');
-const { formatearFecha } = require('./semaforo');
+const { formatearFecha, describirVigencia } = require('./semaforo');
 
 const COLUMNAS = [
   { key: 'numero_empleado', label: 'Número Empleado', width: 18 },
@@ -21,6 +21,7 @@ const COLUMNAS = [
   { key: 'departamento', label: 'Departamento', width: 22 },
   { key: 'puesto', label: 'Puesto', width: 22 },
   { key: 'tipo_estudio', label: 'Estudio', width: 28 },
+  { key: 'vigencia', label: 'Vigencia aplicada', width: 26 },
   { key: 'fecha_realizacion', label: 'Fecha Realización', width: 18 },
   { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', width: 18 },
   { key: 'dias_para_vencer', label: 'Días para Vencer', width: 17 },
@@ -42,6 +43,16 @@ function motivoDeEstudio(estudio) {
   return [estudio.motivo, estudio.observaciones].filter(Boolean).join(' · ');
 }
 
+/** Texto de la vigencia con la que se calculó el vencimiento (catálogo o provisional). */
+function vigenciaDeEstudio(estudio) {
+  if (!estudio) return '';
+  const etiqueta = describirVigencia(
+    estudio.vigencia_meses_aplicada,
+    estudio.vigencia_dias_aplicada
+  );
+  return estudio.es_provisional ? `Provisional · ${etiqueta}` : etiqueta;
+}
+
 function filaDeEstudio(empleado, estudio) {
   return {
     numero_empleado: empleado.numero_empleado,
@@ -49,6 +60,7 @@ function filaDeEstudio(empleado, estudio) {
     departamento: empleado.departamento || '—',
     puesto: empleado.puesto || '—',
     tipo_estudio: estudio ? estudio.tipo_estudio : 'Sin estudios registrados',
+    vigencia: vigenciaDeEstudio(estudio),
     fecha_realizacion: estudio ? formatearFecha(estudio.fecha_realizacion) : '',
     fecha_vencimiento: estudio ? formatearFecha(estudio.fecha_vencimiento) : '',
     dias_para_vencer:
@@ -170,5 +182,6 @@ module.exports = {
   generarArchivoExcel,
   nombreArchivoSugerido,
   formatearFechaHora,
-  filaDeEstudio
+  filaDeEstudio,
+  vigenciaDeEstudio
 };

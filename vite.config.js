@@ -30,9 +30,29 @@ function inyectarCsp() {
   };
 }
 
+/**
+ * Inyecta el inicializador de tema como script clásico (se ejecuta antes del
+ * primer renderizado). Vive en `public/` para que Vite no lo transforme.
+ */
+function inyectarInicializadorTema() {
+  return {
+    name: 'estudios-medicos-tema',
+    order: 'post',
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'script',
+          attrs: { src: './theme-init.js' },
+          injectTo: 'head'
+        }
+      ];
+    }
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [react(), inyectarCsp()],
+  plugins: [react(), inyectarCsp(), inyectarInicializadorTema()],
   server: {
     host: '127.0.0.1',
     port: 5173,

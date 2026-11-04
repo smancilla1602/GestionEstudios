@@ -6,11 +6,19 @@
 
 const { getDb } = require('./database');
 const { entero, fechaISO, unoDe, rutaArchivo, texto } = require('../utils/validaciones');
-const { RESULTADOS, hoyISO, sumarMeses } = require('../services/semaforo');
+const {
+  RESULTADOS,
+  hoyISO,
+  sumarMeses,
+  calcularVencimiento,
+  LIMITES_PROVISIONAL
+} = require('../services/semaforo');
 
 const SQL_ESTUDIO = `
   SELECT em.id, em.empleado_id, em.tipo_estudio_id, em.fecha_realizacion, em.fecha_vencimiento,
          em.resultado, em.ruta_archivo, em.observaciones, em.creado_en,
+         em.es_provisional, em.vigencia_meses_aplicada, em.vigencia_dias_aplicada,
+         em.provisional_motivo,
          te.nombre AS tipo_estudio, te.vigencia_meses
   FROM estudios_medicos em
   JOIN tipos_estudio te ON te.id = em.tipo_estudio_id
@@ -88,12 +96,23 @@ function actualizarTipoEstudio(id, datos = {}) {
     if (!recalcular || limpio.vigencia_meses === actual.vigencia_meses) return 0;
 
     const estudios = db
-      .prepare('SELECT id, fecha_realizacion FROM estudios_medicos WHERE tipo_estudio_id = ?')
+      .prepare(
+        `SELECT id, fecha_realizacion FROM estudios_medicos
+          WHERE tipo_estudio_id = ? AND es_provisional = 0`
+      )
       .all(tipoId);
-    const actualizarFecha = db.prepare('UPDATE estudios_medicos SET fecha_vencimiento = ? WHERE id = ?');
+    const actualizarFecha = db.prepare(
+      `UPDATE estudios_medicos
+          SET fecha_vencimiento = ?, vigencia_meses_aplicada = ?
+        WHERE id = ?`
+    );
 
     for (const estudio of estudios) {
-      actualizarFecha.run(sumarMeses(estudio.fecha_realizacion, limpio.vigencia_meses), estudio.id);
+      actualizarFecha.run(
+        sumarMeses(estudio.fecha_realizacion, limpio.vigencia_meses),
+        limpio.vigencia_meses,
+        estudio.id
+      );
     }
     return estudios.length;
   });
@@ -124,7 +143,7 @@ function eliminarTipoEstudio(id) {
 
 function listarEstudiosPorEmpleado(empleadoId) {
   return getDb()
-    .prepare(`${SQL_ESTUDIO} WHERE em.empleado_id = ? ORDER BY em.fecha_realizacion DESC, em.id DESC`)
+    .prepare(`${SQL_ESTUDIO} WHERE em.empleado_id = ? ORDER BY em.creado_en DESC, em.id DESC`)
     .all(Number(empleadoId));
 }
 
@@ -142,14 +161,55 @@ function normalizarDatos(datos = {}, empleadoId) {
     throw new Error('La fecha de realización no puede ser futura');
   }
 
+  const esProvisional =
+    datos.es_provisional === true || datos.es_provisional === 1 || datos.es_provisional === '1';
+
+  let meses = tipo.vigencia_meses;
+  let dias = 0;
+  let fechaVencimiento = sumarMeses(fechaRealizacion, meses);
+
+  if (esProvisional) {
+    meses =
+      datos.vigencia_meses === '' || datos.vigencia_meses === null || datos.vigencia_meses === undefined
+        ? 0
+        : entero(datos.vigencia_meses, 'Meses de la vigencia provisional', {
+            min: 0,
+            max: LIMITES_PROVISIONAL.meses
+          });
+
+    dias =
+      datos.vigencia_dias === '' || datos.vigencia_dias === null || datos.vigencia_dias === undefined
+        ? 0
+        : entero(datos.vigencia_dias, 'Días de la vigencia provisional', {
+            min: 0,
+            max: LIMITES_PROVISIONAL.dias
+          });
+
+    if (meses === 0 && dias === 0) {
+      throw new Error('Indique la vigencia provisional: al menos 1 día (en meses o en días)');
+    }
+
+    fechaVencimiento = calcularVencimiento(fechaRealizacion, { meses, dias });
+  }
+
   return {
     empleado_id: empleadoId,
     tipo_estudio_id: tipo.id,
     fecha_realizacion: fechaRealizacion,
-    fecha_vencimiento: sumarMeses(fechaRealizacion, tipo.vigencia_meses),
+    fecha_vencimiento: fechaVencimiento,
     resultado: unoDe(datos.resultado, RESULTADOS, 'Resultado'),
     ruta_archivo: rutaArchivo(datos.ruta_archivo),
     observaciones: texto(datos.observaciones, 'Observaciones', { requerido: false, max: 1000 }) || null,
+    es_provisional: esProvisional ? 1 : 0,
+    vigencia_meses_aplicada: meses,
+    vigencia_dias_aplicada: dias,
+    provisional_motivo:
+      (esProvisional
+        ? texto(datos.provisional_motivo, 'Motivo del estudio provisional', {
+            requerido: false,
+            max: 200
+          })
+        : '') || null,
     vigencia_meses: tipo.vigencia_meses
   };
 }
@@ -164,9 +224,11 @@ function crearEstudio(datos = {}) {
   const info = getDb()
     .prepare(
       `INSERT INTO estudios_medicos
-         (empleado_id, tipo_estudio_id, fecha_realizacion, fecha_vencimiento, resultado, ruta_archivo, observaciones)
+         (empleado_id, tipo_estudio_id, fecha_realizacion, fecha_vencimiento, resultado, ruta_archivo,
+          observaciones, es_provisional, vigencia_meses_aplicada, vigencia_dias_aplicada, provisional_motivo)
        VALUES
-         (@empleado_id, @tipo_estudio_id, @fecha_realizacion, @fecha_vencimiento, @resultado, @ruta_archivo, @observaciones)`
+         (@empleado_id, @tipo_estudio_id, @fecha_realizacion, @fecha_vencimiento, @resultado, @ruta_archivo,
+          @observaciones, @es_provisional, @vigencia_meses_aplicada, @vigencia_dias_aplicada, @provisional_motivo)`
     )
     .run(limpio);
 
@@ -178,7 +240,16 @@ function actualizarEstudio(id, datos = {}) {
   const actual = getDb().prepare('SELECT * FROM estudios_medicos WHERE id = ?').get(estudioId);
   if (!actual) throw new Error('Estudio no encontrado');
 
-  const limpio = normalizarDatos({ ...actual, ...datos }, actual.empleado_id);
+  // La vigencia guardada vive en las columnas *_aplicada; se reutiliza si la UI no la envía.
+  const limpio = normalizarDatos(
+    {
+      ...actual,
+      vigencia_meses: actual.vigencia_meses_aplicada,
+      vigencia_dias: actual.vigencia_dias_aplicada,
+      ...datos
+    },
+    actual.empleado_id
+  );
 
   getDb()
     .prepare(
@@ -188,7 +259,11 @@ function actualizarEstudio(id, datos = {}) {
            fecha_vencimiento = @fecha_vencimiento,
            resultado = @resultado,
            ruta_archivo = @ruta_archivo,
-           observaciones = @observaciones
+           observaciones = @observaciones,
+           es_provisional = @es_provisional,
+           vigencia_meses_aplicada = @vigencia_meses_aplicada,
+           vigencia_dias_aplicada = @vigencia_dias_aplicada,
+           provisional_motivo = @provisional_motivo
        WHERE id = @id`
     )
     .run({ ...limpio, id: estudioId });

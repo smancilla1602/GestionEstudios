@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CalendarClock, Loader2, Paperclip, Save, X } from 'lucide-react';
 import { api } from '../lib/api';
-import { formatearFecha, hoyISO, sumarMeses } from '../lib/fechas';
+import { formatearFecha, hoyISO, sumarMeses, calcularVencimiento, describirVigencia } from '../lib/fechas';
 import { RESULTADOS, nombreArchivo } from '../lib/format';
 
+const VIGENCIA_PROVISIONAL_POR_DEFECTO = { meses: '0', dias: '30' };
+
 function estadoInicial(estudio) {
+  const esProvisional = Boolean(estudio?.es_provisional);
   return {
     tipo_estudio_id: estudio?.tipo_estudio_id ? String(estudio.tipo_estudio_id) : '',
     fecha_realizacion: estudio?.fecha_realizacion ?? hoyISO(),
     resultado: estudio?.resultado ?? 'APTO',
     ruta_archivo: estudio?.ruta_archivo ?? null,
-    observaciones: estudio?.observaciones ?? ''
+    observaciones: estudio?.observaciones ?? '',
+    es_provisional: esProvisional,
+    vigencia_meses: esProvisional
+      ? String(estudio?.vigencia_meses_aplicada ?? 0)
+      : VIGENCIA_PROVISIONAL_POR_DEFECTO.meses,
+    vigencia_dias: esProvisional
+      ? String(estudio?.vigencia_dias_aplicada ?? 0)
+      : VIGENCIA_PROVISIONAL_POR_DEFECTO.dias,
+    provisional_motivo: estudio?.provisional_motivo ?? ''
   };
 }
 
@@ -50,10 +61,32 @@ export default function EstudioForm({ empleado, estudio, onGuardar, onCancelar }
     [tipos, formulario.tipo_estudio_id]
   );
 
+  const vigenciaProvisional = useMemo(
+    () => ({
+      meses: Number(formulario.vigencia_meses) || 0,
+      dias: Number(formulario.vigencia_dias) || 0
+    }),
+    [formulario.vigencia_meses, formulario.vigencia_dias]
+  );
+
   const vencimiento = useMemo(() => {
     if (!tipoSeleccionado || !formulario.fecha_realizacion) return '';
+    if (formulario.es_provisional) {
+      return calcularVencimiento(formulario.fecha_realizacion, vigenciaProvisional);
+    }
     return sumarMeses(formulario.fecha_realizacion, tipoSeleccionado.vigencia_meses);
-  }, [tipoSeleccionado, formulario.fecha_realizacion]);
+  }, [
+    tipoSeleccionado,
+    formulario.fecha_realizacion,
+    formulario.es_provisional,
+    vigenciaProvisional
+  ]);
+
+  const etiquetaVigencia = formulario.es_provisional
+    ? describirVigencia(vigenciaProvisional.meses, vigenciaProvisional.dias)
+    : tipoSeleccionado
+      ? `${tipoSeleccionado.vigencia_meses} ${tipoSeleccionado.vigencia_meses === 1 ? 'mes' : 'meses'}`
+      : '';
 
   function actualizar(campo, valor) {
     setFormulario((previo) => ({ ...previo, [campo]: valor }));
@@ -85,7 +118,11 @@ export default function EstudioForm({ empleado, estudio, onGuardar, onCancelar }
         fecha_realizacion: formulario.fecha_realizacion,
         resultado: formulario.resultado,
         ruta_archivo: formulario.ruta_archivo,
-        observaciones: formulario.observaciones
+        observaciones: formulario.observaciones,
+        es_provisional: formulario.es_provisional,
+        vigencia_meses: formulario.es_provisional ? vigenciaProvisional.meses : 0,
+        vigencia_dias: formulario.es_provisional ? vigenciaProvisional.dias : 0,
+        provisional_motivo: formulario.es_provisional ? formulario.provisional_motivo : ''
       });
     } catch (err) {
       setError(err.message);
@@ -140,6 +177,80 @@ export default function EstudioForm({ empleado, estudio, onGuardar, onCancelar }
           </select>
         </div>
 
+        <div className="sm:col-span-2">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3.5 py-3 transition hover:border-slate-700">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+              checked={formulario.es_provisional}
+              onChange={(evento) => actualizar('es_provisional', evento.target.checked)}
+            />
+            <span className="min-w-0">
+              <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-200">
+                Estudio provisional
+                <span className="badge border-amber-500/25 bg-amber-500/10 text-amber-300">
+                  Vigencia manual
+                </span>
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                Usa el tipo de estudio del catálogo, pero la vigencia se captura en meses y días
+                (por ejemplo 1 mes y 10 días, o sólo 10 días).
+              </span>
+            </span>
+          </label>
+        </div>
+
+        {formulario.es_provisional ? (
+          <>
+            <div>
+              <label className="label" htmlFor="vigencia_meses">
+                Meses de vigencia
+              </label>
+              <input
+                id="vigencia_meses"
+                type="number"
+                className="input"
+                min={0}
+                max={120}
+                step={1}
+                value={formulario.vigencia_meses}
+                onChange={(evento) => actualizar('vigencia_meses', evento.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="label" htmlFor="vigencia_dias">
+                Días de vigencia
+              </label>
+              <input
+                id="vigencia_dias"
+                type="number"
+                className="input"
+                min={0}
+                max={365}
+                step={1}
+                value={formulario.vigencia_dias}
+                onChange={(evento) => actualizar('vigencia_dias', evento.target.value)}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <div className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-[11px] leading-relaxed text-amber-200">
+                <CalendarClock size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Vigencia provisional: <span className="font-bold">{etiquetaVigencia}</span>
+                  {vencimiento ? (
+                    <>
+                      {' · '}vence el <span className="font-bold">{formatearFecha(vencimiento)}</span>
+                    </>
+                  ) : null}
+                  . La fecha definitiva la confirma el sistema al guardar.
+                </span>
+              </div>
+            </div>
+          </>
+        ) : null}
+
         <div>
           <label className="label" htmlFor="fecha_realizacion">
             Fecha de realización *
@@ -156,14 +267,18 @@ export default function EstudioForm({ empleado, estudio, onGuardar, onCancelar }
         </div>
 
         <div>
-          <label className="label">Fecha de vencimiento (automática)</label>
+          <label className="label">
+            {formulario.es_provisional
+              ? 'Fecha de vencimiento (provisional)'
+              : 'Fecha de vencimiento (automática)'}
+          </label>
           <div className="input flex items-center justify-between bg-slate-900/70 text-slate-300">
             <span className={vencimiento ? 'font-semibold' : 'text-slate-500'}>
               {vencimiento ? formatearFecha(vencimiento) : 'Seleccione tipo y fecha'}
             </span>
-            {tipoSeleccionado ? (
+            {etiquetaVigencia ? (
               <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                {tipoSeleccionado.vigencia_meses} meses
+                {etiquetaVigencia}
               </span>
             ) : null}
           </div>
@@ -223,6 +338,22 @@ export default function EstudioForm({ empleado, estudio, onGuardar, onCancelar }
             )}
           </div>
         </div>
+
+        {formulario.es_provisional ? (
+          <div className="sm:col-span-2">
+            <label className="label" htmlFor="provisional_motivo">
+              Motivo del estudio provisional (opcional)
+            </label>
+            <input
+              id="provisional_motivo"
+              className="input"
+              value={formulario.provisional_motivo}
+              onChange={(evento) => actualizar('provisional_motivo', evento.target.value)}
+              placeholder="Ej. En espera de resultados de laboratorio, valoración pendiente…"
+              maxLength={200}
+            />
+          </div>
+        ) : null}
 
         <div className="sm:col-span-2">
           <label className="label" htmlFor="observaciones">

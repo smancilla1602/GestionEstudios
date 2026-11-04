@@ -3,10 +3,77 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * Tema claro (valores por defecto del documento).
+   * La escala `slate` se invierte semánticamente: `slate-950` es el fondo y
+   * `slate-900` la superficie, igual que en modo oscuro. Así las utilidades
+   * que ya usan los componentes conservan su significado en ambos temas.
+   */
+  :root {
+    color-scheme: light;
+    --c-white: 15 23 42;
+    --c-black: 100 116 139;
+    --c-slate-50: 2 6 23;
+    --c-slate-100: 15 23 42;
+    --c-slate-200: 30 41 59;
+    --c-slate-300: 51 65 85;
+    --c-slate-400: 71 85 105;
+    --c-slate-500: 82 97 115;
+    --c-slate-600: 148 163 184;
+    --c-slate-700: 203 213 225;
+    --c-slate-800: 226 232 240;
+    --c-slate-900: 255 255 255;
+    --c-slate-950: 241 245 249;
+    --c-emerald-200: 6 95 70;
+    --c-emerald-300: 4 120 87;
+    --c-emerald-400: 4 120 87;
+    --c-amber-200: 146 64 14;
+    --c-amber-300: 180 83 9;
+    --c-amber-400: 180 83 9;
+    --c-rose-200: 190 18 60;
+    --c-rose-300: 190 18 60;
+    --c-rose-400: 190 18 60;
+    --c-sky-300: 3 105 161;
+    --c-sky-400: 3 105 161;
+  }
+
+  /* Tema oscuro: los valores originales de la aplicación. */
+  .dark {
+    color-scheme: dark;
+    --c-white: 255 255 255;
+    --c-black: 0 0 0;
+    --c-slate-50: 248 250 252;
+    --c-slate-100: 241 245 249;
+    --c-slate-200: 226 232 240;
+    --c-slate-300: 203 213 225;
+    --c-slate-400: 148 163 184;
+    --c-slate-500: 100 116 139;
+    --c-slate-600: 71 85 105;
+    --c-slate-700: 51 65 85;
+    --c-slate-800: 30 41 59;
+    --c-slate-900: 15 23 42;
+    --c-slate-950: 2 6 23;
+    --c-emerald-200: 167 243 208;
+    --c-emerald-300: 110 231 183;
+    --c-emerald-400: 52 211 153;
+    --c-amber-200: 253 230 138;
+    --c-amber-300: 252 211 77;
+    --c-amber-400: 251 191 36;
+    --c-rose-200: 254 205 211;
+    --c-rose-300: 253 164 175;
+    --c-rose-400: 251 113 133;
+    --c-sky-300: 125 211 252;
+    --c-sky-400: 56 189 248;
+  }
+
   html,
   body,
   #root {
     height: 100%;
+  }
+
+  html {
+    background-color: rgb(var(--c-slate-950));
   }
 
   body {
@@ -35,6 +102,10 @@
     cursor: pointer;
   }
 
+  :root:not(.dark) input[type='date']::-webkit-calendar-picker-indicator {
+    filter: opacity(0.55);
+  }
+
   ::selection {
     @apply bg-emerald-500/30;
   }
@@ -54,7 +125,7 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-emerald-500;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/20 transition hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100;
   }
 
   .btn-secondary {
@@ -66,7 +137,7 @@
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/90 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/90 px-4 py-2.5 text-sm font-semibold text-rose-50 transition hover:bg-rose-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .badge {

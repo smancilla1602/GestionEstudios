@@ -157,7 +157,7 @@ export default function Dashboard() {
           </button>
           <button
             type="button"
-            className="btn-primary bg-sky-500 text-sky-950 shadow-sky-500/20 hover:bg-sky-400"
+            className="btn-primary bg-sky-500 text-sky-950 shadow-sky-500/20 hover:brightness-110"
             onClick={exportarExcel}
             disabled={exportando}
           >

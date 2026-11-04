@@ -188,6 +188,70 @@ async function ejecutar() {
   );
   await capturar(ventana, '01-dashboard.png');
 
+  console.log('\n=== Tema claro / oscuro ===');
+  const estadoTemaInicial = await ventana.webContents.executeJavaScript(`(() => {
+    const boton = document.querySelector('button[data-tema]');
+    return {
+      existe: Boolean(boton),
+      titulo: boton?.getAttribute('title'),
+      oscuro: document.documentElement.classList.contains('dark')
+    };
+  })()`);
+  comprobar(
+    'El botón de cambio de tema está en el encabezado',
+    estadoTemaInicial.existe && estadoTemaInicial.titulo === 'Cambiar a modo claro',
+    JSON.stringify(estadoTemaInicial)
+  );
+  comprobar('La aplicación inicia en modo oscuro', estadoTemaInicial.oscuro);
+
+  const estadoClaro = await ventana.webContents.executeJavaScript(`(() => {
+    document.querySelector('button[data-tema]')?.click();
+    return new Promise((resolve) => setTimeout(() => {
+      const boton = document.querySelector('button[data-tema]');
+      resolve({
+        oscuro: document.documentElement.classList.contains('dark'),
+        guardado: localStorage.getItem('estudiosmedicos.tema'),
+        titulo: boton?.getAttribute('title'),
+        fondo: getComputedStyle(document.body).backgroundColor
+      });
+    }, 250));
+  })()`);
+  const rgbFondoClaro = (estadoClaro.fondo.match(/\d+/g) || []).map(Number);
+  comprobar(
+    'El botón cambia a modo claro y lo guarda en localStorage',
+    !estadoClaro.oscuro &&
+      estadoClaro.guardado === 'light' &&
+      estadoClaro.titulo === 'Cambiar a modo oscuro',
+    JSON.stringify(estadoClaro)
+  );
+  comprobar(
+    'El fondo del modo claro es legible (brillante)',
+    rgbFondoClaro.length >= 3 && rgbFondoClaro.slice(0, 3).every((valor) => valor > 200),
+    estadoClaro.fondo
+  );
+  await capturar(ventana, '01b-dashboard-modo-claro.png');
+  await ventana.webContents.executeJavaScript(`(() => {
+    const principal = document.querySelector('main');
+    principal?.scrollTo({ top: principal.scrollHeight });
+  })()`);
+  await esperar(300);
+  await capturar(ventana, '01c-tabla-modo-claro.png');
+  await ventana.webContents.executeJavaScript(`document.querySelector('main')?.scrollTo({ top: 0 })`);
+  await esperar(200);
+
+  const estadoOscuro = await ventana.webContents.executeJavaScript(`(() => {
+    document.querySelector('button[data-tema]')?.click();
+    return new Promise((resolve) => setTimeout(() => resolve({
+      oscuro: document.documentElement.classList.contains('dark'),
+      guardado: localStorage.getItem('estudiosmedicos.tema')
+    }), 250));
+  })()`);
+  comprobar(
+    'El botón regresa al modo oscuro',
+    estadoOscuro.oscuro && estadoOscuro.guardado === 'dark',
+    JSON.stringify(estadoOscuro)
+  );
+
   console.log('\n=== Modal de detalle ===');
   const abrioDetalle = await ventana.webContents.executeJavaScript(`(() => {
     const boton = document.querySelector('button[title="Ver detalle"]');
@@ -200,6 +264,55 @@ async function ejecutar() {
   comprobar('Se abre el detalle del empleado', abrioDetalle);
   comprobar('El detalle lista los estudios vigentes', textoDetalle.includes('Estudios vigentes (1)'));
   await capturar(ventana, '02-detalle-empleado.png');
+
+  await ventana.webContents.executeJavaScript(`(() => {
+    const estilo = document.createElement('style');
+    estilo.id = 'smoke-sin-transiciones';
+    estilo.textContent = '*,*::before,*::after{transition:none !important}';
+    document.head.appendChild(estilo);
+    document.querySelector('button[data-tema]')?.click();
+  })()`);
+  await esperar(300);
+  await capturar(ventana, '02b-detalle-modo-claro.png');
+
+  const estilosModalClaro = await ventana.webContents.executeJavaScript(`(() => {
+    const dialogo = document.querySelector('[role="dialog"]');
+    const secundario = [...dialogo.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Registrar estudio')
+    );
+    const icono = dialogo.querySelector('button[title="Editar estudio"]');
+    const leer = (el) =>
+      el
+        ? { fondo: getComputedStyle(el).backgroundColor, texto: getComputedStyle(el).color }
+        : null;
+    return {
+      clasesHtml: document.documentElement.className,
+      fondoDialogo: getComputedStyle(dialogo).backgroundColor,
+      secundario: leer(secundario),
+      icono: leer(icono)
+    };
+  })()`);
+
+  const brillo = (color) => {
+    const [r = 0, g = 0, b = 0] = (color.match(/\d+/g) || []).map(Number);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  comprobar(
+    'El modal mantiene contraste en modo claro',
+    !estilosModalClaro.clasesHtml.split(/\s+/).includes('dark') &&
+      brillo(estilosModalClaro.fondoDialogo) > 240 &&
+      brillo(estilosModalClaro.secundario.fondo) > 180 &&
+      brillo(estilosModalClaro.secundario.texto) < 80 &&
+      brillo(estilosModalClaro.icono.fondo) > 180 &&
+      brillo(estilosModalClaro.icono.texto) < 80,
+    JSON.stringify(estilosModalClaro)
+  );
+
+  await ventana.webContents.executeJavaScript(`(() => {
+    document.getElementById('smoke-sin-transiciones')?.remove();
+    document.querySelector('button[data-tema]')?.click();
+  })()`);
+  await esperar(300);
 
   await ventana.webContents.executeJavaScript(`(() => {
     const cerrar = document.querySelector('button[title="Cerrar"]');
@@ -314,6 +427,56 @@ async function ejecutar() {
       textoEdicionTipo.includes('Guardar cambios')
   );
   await capturar(ventana, '06-editar-tipo-estudio.png');
+
+  await ventana.webContents.executeJavaScript(
+    `document.querySelector('button[title="Cerrar"]')?.click()`
+  );
+  await esperar(300);
+
+  console.log('\n=== Formulario de estudio provisional ===');
+  await ventana.webContents.executeJavaScript(`(() => {
+    const boton = [...document.querySelectorAll('button')].find((b) =>
+      b.textContent.trim().startsWith('Empleados')
+    );
+    boton?.click();
+  })()`);
+  await esperar(700);
+
+  const abrioFormEstudio = await ventana.webContents.executeJavaScript(`(() => {
+    const boton = document.querySelector('button[title="Registrar estudio"]');
+    if (!boton) return false;
+    boton.click();
+    return true;
+  })()`);
+  await esperar(500);
+
+  const estadoProvisional = await ventana.webContents.executeJavaScript(`(() => {
+    const casilla = [...document.querySelectorAll('input[type="checkbox"]')].find((c) =>
+      (c.closest('label')?.textContent || '').includes('Estudio provisional')
+    );
+    if (!casilla) return { hayCasilla: false };
+    casilla.click();
+    return { hayCasilla: true, marcada: casilla.checked };
+  })()`);
+  await esperar(300);
+
+  const textoProvisional = await ventana.webContents.executeJavaScript(`(() => ({
+    campos: document.querySelectorAll('#vigencia_meses, #vigencia_dias').length,
+    texto: document.body.innerText
+  }))()`);
+
+  comprobar(
+    'El formulario de estudio ofrece la casilla de estudio provisional',
+    abrioFormEstudio && estadoProvisional.hayCasilla === true && estadoProvisional.marcada === true,
+    JSON.stringify({ abrioFormEstudio, estadoProvisional })
+  );
+  comprobar(
+    'Al marcar provisional aparecen meses, días y la vista previa',
+    textoProvisional.campos === 2 &&
+      /vigencia provisional: 30 d[ií]as/i.test(textoProvisional.texto),
+    `campos=${textoProvisional.campos}`
+  );
+  await capturar(ventana, '07-estudio-provisional.png');
 
   await ventana.webContents.executeJavaScript(
     `document.querySelector('button[title="Cerrar"]')?.click()`

@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   Users
 } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 
 const NAVEGACION = [
   {
@@ -30,17 +31,18 @@ const NAVEGACION = [
 
 export default function Sidebar({ vista, onCambiar, info }) {
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-950/90">
-      <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-5">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-900/95 dark:bg-slate-950/90">
+      <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-5">
         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30">
           <HeartPulse size={22} />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold tracking-tight text-white">Estudios Médicos</p>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             Control de estudios médicos
           </p>
         </div>
+        <ThemeToggle />
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
@@ -86,7 +88,7 @@ export default function Sidebar({ vista, onCambiar, info }) {
             </span>
           </div>
         </div>
-        <p className="mt-3 px-1 text-[10px] leading-relaxed text-slate-600">
+        <p className="mt-3 px-1 text-[10px] leading-relaxed text-slate-500">
           Los datos nunca salen de este equipo.
         </p>
       </div>

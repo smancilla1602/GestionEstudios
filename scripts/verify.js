@@ -14,10 +14,11 @@ const XLSX = require('xlsx');
 
 const semaforo = require('../electron/services/semaforo');
 const { initDatabase, getDb, closeDatabase } = require('../electron/db/database');
+const { migrarEsquema } = require('../electron/db/schema');
 const empleadosRepo = require('../electron/db/empleados');
 const estudiosRepo = require('../electron/db/estudios');
 const { obtenerEmpleadosConEstado, obtenerEmpleadoPorId } = require('../electron/db/consultas');
-const { generarArchivoExcel } = require('../electron/services/excel');
+const { generarArchivoExcel, construirLibro } = require('../electron/services/excel');
 const { autenticar } = require('../electron/services/auth');
 
 const directorioTemporal = fs.mkdtempSync(path.join(os.tmpdir(), 'estudios-verify-'));
@@ -151,8 +152,21 @@ prueba('Se crean las 4 tablas del esquema', () => {
   for (const tabla of ['usuarios', 'empleados', 'tipos_estudio', 'estudios_medicos']) {
     assert.ok(tablas.includes(tabla), `Falta la tabla ${tabla}`);
   }
-  assert.equal(getDb().pragma('user_version', { simple: true }), 1);
+  assert.equal(getDb().pragma('user_version', { simple: true }), 2);
   assert.equal(getDb().pragma('foreign_keys', { simple: true }), 1);
+});
+
+prueba('El esquema incluye las columnas del estudio provisional y la migración es idempotente', () => {
+  const columnas = getDb().pragma('table_info(estudios_medicos)').map((columna) => columna.name);
+  for (const nombre of [
+    'es_provisional',
+    'vigencia_meses_aplicada',
+    'vigencia_dias_aplicada',
+    'provisional_motivo'
+  ]) {
+    assert.ok(columnas.includes(nombre), `Falta la columna ${nombre}`);
+  }
+  assert.equal(migrarEsquema(getDb()), 0, 'La migración no debe volver a ejecutarse');
 });
 
 prueba('Se siembra el usuario admin con hash bcrypt', () => {
@@ -347,7 +361,7 @@ prueba('La pestaña Próximos a Vencer sólo incluye empleados por vencer', () =
   const filas = XLSX.utils.sheet_to_json(libro.Sheets['Próximos a Vencer'], { header: 1, blankrows: true });
   assert.equal(filas.length, 2);
   assert.equal(filas[1][0], 'VER-001');
-  assert.equal(filas[1][8], 'PRÓXIMO A VENCER');
+  assert.equal(filas[1][9], 'PRÓXIMO A VENCER');
 });
 
 prueba('La pestaña Bloqueados-Vencidos incluye los 4 casos bloqueados', () => {
@@ -357,7 +371,7 @@ prueba('La pestaña Bloqueados-Vencidos incluye los 4 casos bloqueados', () => {
   assert.deepEqual(numeros, ['VER-002', 'VER-003', 'VER-005', 'VER-006']);
 
   const sinEstudios = filas.find((fila) => fila[0] === 'VER-005');
-  assert.match(String(sinEstudios[10]), /Sin estudios médicos registrados/);
+  assert.match(String(sinEstudios[11]), /Sin estudios médicos registrados/);
 });
 
 prueba('La pestaña Resumen cuadra con los totales calculados', () => {
@@ -456,6 +470,239 @@ prueba('Cambiar la vigencia puede recalcular los vencimientos existentes', () =>
   empleadosRepo.eliminarEmpleado(empleado.id);
   estudiosRepo.eliminarTipoEstudio(tipo.id);
   assert.equal(estudiosRepo.obtenerTipoEstudio(tipo.id), null);
+});
+
+console.log('\n=== 6. Estudios provisionales (vigencia en meses + días) ===');
+
+prueba('sumarDias suma días de calendario', () => {
+  assert.equal(semaforo.sumarDias('2026-03-01', 10), '2026-03-11');
+  assert.equal(semaforo.sumarDias('2026-12-31', 1), '2027-01-01');
+  assert.throws(() => semaforo.sumarDias('2026-13-01', 1), /Fecha inválida/);
+});
+
+prueba('calcularVencimiento aplica meses y luego días', () => {
+  assert.equal(semaforo.calcularVencimiento('2026-03-01', { meses: 1, dias: 10 }), '2026-04-11');
+  assert.equal(semaforo.calcularVencimiento('2026-03-01', { meses: 0, dias: 10 }), '2026-03-11');
+  assert.equal(semaforo.calcularVencimiento('2026-01-31', { meses: 1, dias: 1 }), '2026-03-01');
+});
+
+prueba('describirVigencia arma el texto en español', () => {
+  assert.equal(semaforo.describirVigencia(1, 10), '1 mes y 10 días');
+  assert.equal(semaforo.describirVigencia(0, 10), '10 días');
+  assert.equal(semaforo.describirVigencia(12, 0), '12 meses');
+  assert.equal(semaforo.describirVigencia(0, 0), 'sin vigencia');
+});
+
+const empProvisional = crearEmpleadoDemo('PROV-001');
+
+prueba('Estudio provisional de 1 mes y 10 días calcula su vencimiento', () => {
+  const provisional = estudiosRepo.crearEstudio({
+    empleado_id: empProvisional.id,
+    tipo_estudio_id: tipoAudio.id,
+    fecha_realizacion: '2025-03-01',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 1,
+    vigencia_dias: 10,
+    provisional_motivo: 'En espera de laboratorio'
+  });
+  assert.equal(provisional.fecha_vencimiento, '2025-04-11');
+  assert.equal(provisional.es_provisional, 1);
+  assert.equal(provisional.vigencia_meses_aplicada, 1);
+  assert.equal(provisional.vigencia_dias_aplicada, 10);
+  assert.equal(provisional.provisional_motivo, 'En espera de laboratorio');
+  estudiosRepo.eliminarEstudio(provisional.id);
+});
+
+prueba('Estudio provisional sólo en días calcula su vencimiento', () => {
+  const provisional = estudiosRepo.crearEstudio({
+    empleado_id: empProvisional.id,
+    tipo_estudio_id: tipoLab.id,
+    fecha_realizacion: '2025-03-01',
+    resultado: 'RESTRICCION',
+    es_provisional: true,
+    vigencia_meses: 0,
+    vigencia_dias: 10
+  });
+  assert.equal(provisional.fecha_vencimiento, '2025-03-11');
+  assert.equal(provisional.vigencia_meses_aplicada, 0);
+  assert.equal(provisional.vigencia_dias_aplicada, 10);
+  estudiosRepo.eliminarEstudio(provisional.id);
+});
+
+prueba('Rechaza estudio provisional sin meses ni días', () => {
+  assert.throws(
+    () =>
+      estudiosRepo.crearEstudio({
+        empleado_id: empProvisional.id,
+        tipo_estudio_id: tipoAudio.id,
+        fecha_realizacion: '2025-03-01',
+        resultado: 'APTO',
+        es_provisional: true,
+        vigencia_meses: 0,
+        vigencia_dias: 0
+      }),
+    /al menos 1 día/
+  );
+});
+
+prueba('Un estudio de catálogo guarda la vigencia del tipo', () => {
+  const normal = estudiosRepo.crearEstudio({
+    empleado_id: empProvisional.id,
+    tipo_estudio_id: tipoAudio.id,
+    fecha_realizacion: '2025-03-01',
+    resultado: 'APTO'
+  });
+  assert.equal(normal.es_provisional, 0);
+  assert.equal(normal.vigencia_meses_aplicada, tipoAudio.vigencia_meses);
+  assert.equal(normal.vigencia_dias_aplicada, 0);
+  estudiosRepo.eliminarEstudio(normal.id);
+});
+
+prueba('Editar un provisional conserva su vigencia en meses y días', () => {
+  const provisional = estudiosRepo.crearEstudio({
+    empleado_id: empProvisional.id,
+    tipo_estudio_id: tipoGeneral.id,
+    fecha_realizacion: '2025-03-01',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 2,
+    vigencia_dias: 5
+  });
+  assert.equal(provisional.fecha_vencimiento, '2025-05-06');
+
+  const editado = estudiosRepo.actualizarEstudio(provisional.id, {
+    observaciones: 'Renovación parcial',
+    vigencia_dias: 12
+  });
+  assert.equal(editado.es_provisional, 1);
+  assert.equal(editado.vigencia_meses_aplicada, 2);
+  assert.equal(editado.vigencia_dias_aplicada, 12);
+  assert.equal(editado.fecha_vencimiento, '2025-05-13');
+
+  estudiosRepo.eliminarEstudio(provisional.id);
+});
+
+prueba('Cambiar la vigencia del catálogo no altera los estudios provisionales', () => {
+  const tipo = estudiosRepo.crearTipoEstudio({
+    nombre: 'Tipo provisional de verificación',
+    vigencia_meses: 3
+  });
+  const empleado = crearEmpleadoDemo('PROV-002');
+  const normal = estudiosRepo.crearEstudio({
+    empleado_id: empleado.id,
+    tipo_estudio_id: tipo.id,
+    fecha_realizacion: '2025-02-01',
+    resultado: 'APTO'
+  });
+  const provisional = estudiosRepo.crearEstudio({
+    empleado_id: empleado.id,
+    tipo_estudio_id: tipo.id,
+    fecha_realizacion: '2025-02-01',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 0,
+    vigencia_dias: 15
+  });
+  assert.equal(normal.fecha_vencimiento, '2025-05-01');
+  assert.equal(provisional.fecha_vencimiento, '2025-02-16');
+
+  const recalculado = estudiosRepo.actualizarTipoEstudio(tipo.id, {
+    vigencia_meses: 12,
+    recalcular_vencimientos: true
+  });
+  assert.equal(recalculado.estudios_actualizados, 1);
+  assert.equal(estudiosRepo.obtenerEstudio(normal.id).fecha_vencimiento, '2026-02-01');
+  assert.equal(estudiosRepo.obtenerEstudio(provisional.id).fecha_vencimiento, '2025-02-16');
+
+  empleadosRepo.eliminarEmpleado(empleado.id);
+  estudiosRepo.eliminarTipoEstudio(tipo.id);
+});
+
+prueba('El expediente y el Excel reflejan el estudio provisional', () => {
+  const empleado = crearEmpleadoDemo('PROV-003');
+  estudiosRepo.crearEstudio({
+    empleado_id: empleado.id,
+    tipo_estudio_id: tipoAudio.id,
+    fecha_realizacion: '2025-03-01',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 1,
+    vigencia_dias: 10
+  });
+
+  const expediente = obtenerEmpleadoPorId(empleado.id);
+  const estudio = expediente.estudios[0];
+  assert.equal(estudio.es_provisional, 1);
+  assert.equal(
+    semaforo.describirVigencia(estudio.vigencia_meses_aplicada, estudio.vigencia_dias_aplicada),
+    '1 mes y 10 días'
+  );
+
+  const { libro } = construirLibro(obtenerEmpleadosConEstado());
+  const filas = XLSX.utils.sheet_to_json(libro.Sheets.General, { header: 1 });
+  assert.ok(filas[0].includes('Vigencia aplicada'));
+  const filaProvisional = filas.find((fila) => fila[0] === 'PROV-003');
+  assert.equal(filaProvisional[5], 'Provisional · 1 mes y 10 días');
+
+  empleadosRepo.eliminarEmpleado(empleado.id);
+});
+
+prueba('Un provisional vencido bloquea igual que un estudio de catálogo', () => {
+  const empleado = crearEmpleadoDemo('PROV-004');
+  estudiosRepo.crearEstudio({
+    empleado_id: empleado.id,
+    tipo_estudio_id: tipoGeneral.id,
+    fecha_realizacion: '2025-01-10',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 0,
+    vigencia_dias: 10
+  });
+
+  const expediente = obtenerEmpleadoPorId(empleado.id);
+  assert.equal(expediente.estado_semaforo, 'BLOQUEADO');
+  assert.ok(expediente.motivos.some((motivo) => /vencido/.test(motivo)));
+
+  empleadosRepo.eliminarEmpleado(empleado.id);
+});
+
+prueba('El último registro del mismo tipo manda aunque su fecha de realización sea anterior', () => {
+  const empleado = crearEmpleadoDemo('REN-001');
+  const previo = estudiosRepo.crearEstudio({
+    empleado_id: empleado.id,
+    tipo_estudio_id: tipoAudio.id,
+    fecha_realizacion: '2025-06-01',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 0,
+    vigencia_dias: 28
+  });
+  const nuevo = estudiosRepo.crearEstudio({
+    empleado_id: empleado.id,
+    tipo_estudio_id: tipoAudio.id,
+    fecha_realizacion: '2025-05-01',
+    resultado: 'APTO',
+    es_provisional: true,
+    vigencia_meses: 3,
+    vigencia_dias: 0
+  });
+  assert.equal(previo.fecha_vencimiento, '2025-06-29');
+  assert.equal(nuevo.fecha_vencimiento, '2025-08-01');
+
+  const expediente = obtenerEmpleadoPorId(empleado.id);
+  assert.equal(expediente.historia.length, 2);
+  assert.equal(
+    expediente.historia[0].id,
+    nuevo.id,
+    'El historial debe abrir con el último registro capturado'
+  );
+  assert.equal(expediente.estudios.length, 1);
+  assert.equal(expediente.estudios[0].id, nuevo.id);
+  assert.equal(expediente.estudios[0].fecha_vencimiento, '2025-08-01');
+  assert.equal(expediente.total_estudios, 2);
+
+  empleadosRepo.eliminarEmpleado(empleado.id);
 });
 
 console.log('\n=== RESULTADO FINAL ===');

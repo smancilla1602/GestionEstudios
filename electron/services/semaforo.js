@@ -7,13 +7,18 @@
  *  - POR_VENCER : no está bloqueado y algún estudio vence entre hoy y los próximos 30 días.
  *  - VIGENTE    : no está bloqueado ni próximo a vencer.
  *
- * Sólo se evalúa el estudio MÁS RECIENTE de cada tipo (por fecha_realizacion, luego id),
- * para que una renovación no quede bloqueada por un estudio anterior ya vencido.
+ * Sólo se evalúa el estudio MÁS RECIENTE de cada tipo entendido como el ÚLTIMO REGISTRADO
+ * (orden `creado_en DESC, id DESC`), no el de mayor `fecha_realizacion`: así, cuando RH vuelve a
+ * registrar un estudio del mismo tipo, ese registro nuevo manda y el anterior queda como histórico.
+ * La historia llega ya ordenada desde la consulta; `ultimosPorTipo` solo toma el primero de cada tipo.
  *
  * RESTRICCION no bloquea el acceso (no es NO_APTO), pero se reporta como advertencia.
  */
 
 const DIAS_ALERTA = 30;
+
+/** Límites de la vigencia manual de un estudio provisional (meses + días). */
+const LIMITES_PROVISIONAL = { meses: 120, dias: 365 };
 
 const ESTADOS_SEMAFORO = {
   VIGENTE: 'VIGENTE',
@@ -75,6 +80,38 @@ function formatearFecha(fechaISO) {
   return `${dia}/${mes}/${anio}`;
 }
 
+/** Suma días de calendario a una fecha ISO (aritmética en UTC, sin problemas de zona horaria). */
+function sumarDias(fechaISO, dias) {
+  if (!esFechaISO(fechaISO)) {
+    throw new Error(`Fecha inválida: ${fechaISO}`);
+  }
+  const cantidad = Number(dias);
+  if (!Number.isInteger(cantidad)) {
+    throw new Error('Los días de vigencia deben ser un número entero');
+  }
+  const fecha = new Date(`${fechaISO}T00:00:00Z`);
+  fecha.setUTCDate(fecha.getUTCDate() + cantidad);
+  return fecha.toISOString().slice(0, 10);
+}
+
+/**
+ * Vencimiento de un estudio provisional: primero los meses (respetando fin de mes) y luego los días.
+ * Ej.: 01/03/2026 + 1 mes + 10 días = 11/04/2026.
+ */
+function calcularVencimiento(fechaRealizacion, { meses = 0, dias = 0 } = {}) {
+  return sumarDias(sumarMeses(fechaRealizacion, Number(meses) || 0), Number(dias) || 0);
+}
+
+/** Texto en español de una vigencia: "1 mes y 10 días", "10 días", "12 meses". */
+function describirVigencia(meses = 0, dias = 0) {
+  const totalMeses = Number(meses) || 0;
+  const totalDias = Number(dias) || 0;
+  const partes = [];
+  if (totalMeses > 0) partes.push(`${totalMeses} ${totalMeses === 1 ? 'mes' : 'meses'}`);
+  if (totalDias > 0) partes.push(`${totalDias} ${totalDias === 1 ? 'día' : 'días'}`);
+  return partes.length > 0 ? partes.join(' y ') : 'sin vigencia';
+}
+
 /** Evalúa un estudio individual. */
 function evaluarEstudio(estudio, hoy = hoyISO()) {
   const nombre = estudio?.tipo_estudio || 'Estudio';
@@ -107,7 +144,11 @@ function evaluarEstudio(estudio, hoy = hoyISO()) {
   };
 }
 
-/** Toma el estudio más reciente de cada tipo (la historia llega ordenada desc). */
+/**
+ * Toma el estudio que manda de cada tipo.
+ * La historia debe llegar ordenada con el ÚLTIMO REGISTRADO primero (`creado_en DESC, id DESC`),
+ * por lo que gana el registro más reciente aunque su fecha de realización sea anterior.
+ */
 function ultimosPorTipo(estudios = []) {
   const mapa = new Map();
   for (const estudio of estudios) {
@@ -192,6 +233,7 @@ function evaluarEmpleado(empleado = {}, estudios = [], hoy = hoyISO()) {
 
 module.exports = {
   DIAS_ALERTA,
+  LIMITES_PROVISIONAL,
   ESTADOS_SEMAFORO,
   ETIQUETAS_SEMAFORO,
   RESULTADOS,
@@ -199,6 +241,9 @@ module.exports = {
   esFechaISO,
   diffDias,
   sumarMeses,
+  sumarDias,
+  calcularVencimiento,
+  describirVigencia,
   formatearFecha,
   evaluarEstudio,
   evaluarEmpleado,
